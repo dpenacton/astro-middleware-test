@@ -1,0 +1,16 @@
+---
+// Rendered on demand so the middleware runs on every request to `/`.
+// The middleware always redirects; this body only shows if it is bypassed.
+export const prerender = false;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Redirecting…</title>
+  </head>
+  <body>
+    <p>Redirecting… <a href="/home-a">Continue</a></p>
+  </body>
+</html>
