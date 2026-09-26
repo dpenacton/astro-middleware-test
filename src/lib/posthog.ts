@@ -22,7 +22,7 @@ export async function getFlagVariant(
     const res = await fetch(`${host}/flags/?v=2`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: apiKey, distinct_id: distinctId, flag_keys_to_evaluate: [flagKey] }),
+      body: JSON.stringify({ api_key: apiKey, distinct_id: distinctId }),
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return null;
