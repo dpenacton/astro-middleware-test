@@ -1,13 +1,13 @@
 ---
-// Rendered on demand so the middleware runs on every request to `/`.
-// The middleware always redirects; this body only shows if it is bypassed.
-export const prerender = false;
+// Static fallback only. On Cloudflare Pages, `functions/index.ts` handles `/`
+// and redirects before this file is ever served.
 ---
 
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
+    <meta http-equiv="refresh" content="0; url=/home-a" />
     <title>Redirecting…</title>
   </head>
   <body>

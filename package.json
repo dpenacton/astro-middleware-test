@@ -8,17 +8,18 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview",
-    "astro": "astro",
-    "generate-types": "wrangler types"
+    "preview": "astro build && wrangler pages dev dist",
+    "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "^14.3.3",
     "astro": "^7.3.4",
-    "posthog-js": "^1.434.11",
-    "wrangler": "^4.136.3"
+    "posthog-js": "^1.434.11"
   },
   "allowScripts": {
     "esbuild": true
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260926.1",
+    "wrangler": "^4.141.0"
   }
 }

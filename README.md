@@ -1,95 +1,94 @@
-# Astro middleware + PostHog experiment redirect
+# Astro + PostHog server-side A/B/C redirect on Cloudflare Pages
 
-A test app for running a PostHog A/B/C experiment on a mostly static Astro site deployed to Cloudflare. Visitors who land on `/` get assigned to a variant by PostHog in Astro middleware and are redirected to one of three static home pages.
+A test app for running a PostHog A/B/C experiment on a fully static Astro site deployed to Cloudflare Pages. Visitors who land on `/` get assigned to a variant by PostHog in a Cloudflare Pages Function, then get redirected to one of three static home pages.
 
 ```mermaid
 flowchart LR
-  U[Visitor] -->|GET /| W[Cloudflare Worker<br/>Astro middleware]
-  W -->|distinct_id| P[(PostHog /flags)]
-  P -->|variant| W
-  W -.->|$feature_flag_called| P
-  W -->|302| A[/home-a<br/>static/]
-  W -->|302| B[/home-b<br/>static/]
-  W -->|302| C[/home-c<br/>static/]
+  U[Visitor] -->|GET /| F[Pages Function<br/>functions/index.ts]
+  F -->|distinct_id| P[(PostHog /flags)]
+  P -->|variant| F
+  F -.->|$feature_flag_called| P
+  F -->|302| A[/home-a<br/>static/]
+  F -->|302| B[/home-b<br/>static/]
+  F -->|302| C[/home-c<br/>static/]
 ```
 
 ## How it works
 
-`/` is handled by Astro middleware running on a Cloudflare Worker. It:
+Astro builds a plain static site into `dist/`. Cloudflare Pages serves it and runs `functions/index.ts` for `/` only. That function:
 
-1. Reads or creates a PostHog distinct ID (`ph_distinct_id` cookie, falling back to posthog-js's own cookie, then a new UUID).
-2. Asks PostHog (`/flags?v=2`) for the experiment flag's variant.
-3. Sends a `$feature_flag_called` exposure event (via `waitUntil`, so the redirect isn't delayed).
-4. Redirects with a 302 to `/home-a`, `/home-b` or `/home-c` (query string kept). If PostHog fails or times out after 1.5s, it goes to `/home-a`.
+1. Reads or creates a PostHog distinct ID (the `ph_distinct_id` cookie, falling back to posthog-js's own cookie, then a new UUID). The cookie lasts 1 year.
+2. Asks PostHog (`/flags?v=2`) for the experiment flag's variant, with a 1.5s timeout.
+3. Sends a `$feature_flag_called` exposure event via `waitUntil`, so the redirect isn't delayed.
+4. Redirects with a 302 to `/home-a`, `/home-b` or `/home-c`, keeping the query string. If PostHog fails, it redirects to `/home-a`.
 
-`/home-a`, `/home-b` and `/home-c` are prerendered static HTML served straight from Cloudflare's asset store. The Worker never runs for them. They load posthog-js with the same distinct ID, so pageviews and conversions are linked to the exposure.
+`/home-a`, `/home-b` and `/home-c` are static HTML, and the function never runs for them. They load posthog-js with the same distinct ID, so pageviews and conversions are linked to the exposure. Each page shows `distinct_id · variant` at the bottom for debugging.
 
-| Variant key in PostHog | Route    |
-| ---------------------- | -------- |
+| Variant key in PostHog | Route |
+| ---------------------- | ----- |
 | `control` / `home-a`   | `/home-a` |
 | `home-b`               | `/home-b` |
 | `home-c`               | `/home-c` |
 
-Edit `VARIANT_ROUTES` in `src/middleware.ts` to change the mapping.
+To change the mapping, edit `VARIANT_ROUTES` in `functions/index.ts`.
 
 ## Files
 
-- `src/middleware.ts`: flag lookup and redirect (acts only on `/`)
-- `src/lib/posthog.ts`: small fetch-based PostHog client (works in Workers)
-- `src/pages/index.astro`: `prerender = false`, the only on-demand route
+- `functions/index.ts`: Pages Function for `/` (flag lookup and redirect)
+- `src/lib/posthog.ts`: small fetch-based PostHog client, shared with the layout
 - `src/pages/home-{a,b,c}.astro`: static pages
-- `src/layouts/Layout.astro`: posthog-js init bootstrapped with the middleware's distinct ID
+- `src/pages/index.astro`: static fallback only; the function handles `/` on Pages
+- `src/layouts/Layout.astro`: posthog-js init, bootstrapped with the function's distinct ID
 
 ## Configuration
 
-| Variable | Example |
-| -------- | ------- |
+| Variable | Value |
+| -------- | ----- |
 | `PUBLIC_POSTHOG_KEY` (required) | `phc_...` project API key |
 | `PUBLIC_POSTHOG_HOST` | `https://us.i.posthog.com` (or `https://eu.i.posthog.com`) |
-| `PUBLIC_POSTHOG_EXPERIMENT_FLAG` | `home-page-experiment` |
+| `PUBLIC_POSTHOG_EXPERIMENT_FLAG` | `server-side-ab-test` |
 
-These values are read at **build time**. For local builds, copy `.env.example` to `.env`. On Cloudflare, set them as build variables.
+The same variables are used in two places:
+- **At build time**, by Astro, to inline the posthog-js settings into the static pages.
+- **At runtime**, by the Pages Function.
+
+On Cloudflare Pages, "Variables and secrets" (type **Text**) cover both uses. Locally, `.env` covers the build and `.dev.vars` covers the function.
 
 ## Local
 
 ```sh
 npm install
-npm run generate-types   # Cloudflare runtime types (git-ignored)
-cp .env.example .env   # fill in the key
-npm run dev            # middleware runs in workerd via the Cloudflare Vite plugin
-npm run build && npx wrangler dev   # production-like preview
+cp .env.example .env && cp .env.example .dev.vars   # fill in the key in both
+npm run preview      # builds, then runs Pages + Function at http://localhost:8788
 ```
 
-## Deploy
+`npm run dev` (plain `astro dev`) serves the static pages only. It does **not** run the Pages Function, so `/` won't redirect there. Use `npm run preview` to test the redirect.
 
-Note: `@astrojs/cloudflare` v14 deploys to **Cloudflare Workers with static assets**. This is Cloudflare's replacement for Pages, and it is still managed under "Workers & Pages" in the dashboard. Pages Functions are not used.
+## Deploy (Cloudflare Pages)
 
 ### 1. PostHog
-1. Create an experiment (Experiments → New) with feature flag key `home-page-experiment`.
-2. Add the variants `control`, `home-b` and `home-c`, and set the split (for example 34/33/33).
-3. Pick a primary metric, such as a pageview or click on the home pages, then launch.
+Create an experiment with flag key `server-side-ab-test` and the variants `control`, `home-b` and `home-c`. Add a primary metric, then launch.
 
-### 2. GitHub
+### 2. Cloudflare Pages project
+Go to Workers & Pages → Create → **Pages** → Connect to Git, and pick this repo.
+
+| Setting | Value |
+| ------- | ----- |
+| Framework preset | None (or Astro) |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Root directory | *(empty)* |
+
+Under **Settings → Variables and secrets**, add the 3 variables above as **Text** for Production (and Preview, if you use it). Pages picks up `functions/` automatically. Node 22 is pinned via `.node-version`.
+
+After changing variables, redeploy (Deployments → Retry deployment) so the static pages are rebuilt with the new values.
+
+### 3. Verify
 ```sh
-git init && git add . && git commit -m "Astro middleware PostHog experiment"
-gh repo create astro-middleware-test --private --source . --push
-```
-
-### 3. Cloudflare (Git-connected, auto-deploys on push)
-1. Go to Dashboard → Workers & Pages → Create → **Import a repository** and pick the repo.
-2. Build command: `npm run build`. Deploy command: `npx wrangler deploy`.
-3. Under Settings → Build → **Build variables**, add `PUBLIC_POSTHOG_KEY`, `PUBLIC_POSTHOG_HOST` and `PUBLIC_POSTHOG_EXPERIMENT_FLAG`.
-4. Deploy. The worker name comes from `wrangler.jsonc` (`astro-middleware-test-claude`), so the URL is `https://astro-middleware-test-claude.<subdomain>.workers.dev`.
-
-### Alternative: deploy from CLI
-```sh
-npx wrangler login
-npm run build && npx wrangler deploy
-```
-
-### 4. Verify
-```sh
-curl -sI https://<your-worker>.workers.dev/ | grep -iE "location|set-cookie"
+curl -sI https://<project>.pages.dev/ | grep -iE "location|set-cookie"
 # location: /home-b   set-cookie: ph_distinct_id=...
+for i in $(seq 1 10); do curl -s -o /dev/null -w '%{redirect_url}\n' https://<project>.pages.dev/; done | sort | uniq -c
 ```
-Repeat visits with the same cookie always land on the same variant. In PostHog, `$feature_flag_called` events should show up under the experiment.
+- Repeat visits with the same cookie should always land on the same variant.
+- New visitors (incognito, or curl without cookies) should be spread across the variants.
+- In PostHog, `$feature_flag_called` events should show up, and the experiment's exposures should increase.

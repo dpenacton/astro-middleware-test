@@ -1,4 +1,5 @@
-// Minimal PostHog HTTP client for the Worker runtime (no Node APIs needed).
+// Minimal PostHog HTTP client for the Cloudflare runtime (no Node APIs needed).
+// Shared by the Pages Function (server) and the layout script (cookie names).
 
 export const DISTINCT_ID_COOKIE = 'ph_distinct_id';
 export const VARIANT_COOKIE = 'ph_home_variant';
